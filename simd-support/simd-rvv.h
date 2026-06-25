@@ -3,7 +3,7 @@
  * Copyright (c) 2003, 2007-11 Massachusetts Institute of Technology
  *
  * RISC-V V support implemented by Romain Dolbeau. (c) 2019 Romain Dolbeau
- * Modified to support RVV spec v1.0 by Zheng Shuo. (c) 2026 Zheng Shuo
+ * Modified to support RVV spec v1.0 by Romain Dolbeau & Zheng Shuo. (c) 2024-2026 Romain Dolbeau & Zheng Shuo
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,15 +33,15 @@
 #  define DS(d,s) s /* single-precision option */
 #  define TYPE(name) __riscv_ ## name ## _f32m1
 #  define TYPEUINT(name) __riscv_ ## name ## _u32m1
-#  define TYPEINTERPRETF2U(name) __riscv_ ## name ## _f32m1_u32m1
-#  define TYPEINTERPRETU2F(name) __riscv_ ## name ## _u32m1_f32m1
+#  define TYPEINTERPRETF2U __riscv_vreinterpret_v_f32m1_u32m1
+#  define TYPEINTERPRETU2F __riscv_vreinterpret_v_u32m1_f32m1
 #  define TYPEMEM(name) __riscv_ ## name ## e32_v_f32m1
 #else
 #  define DS(d,s) d /* double-precision option */
 #  define TYPE(name) __riscv_ ## name ## _f64m1
 #  define TYPEUINT(name) __riscv_ ## name ## _u64m1
-#  define TYPEINTERPRETF2U(name) __riscv_ ## name ## _f64m1_u64m1
-#  define TYPEINTERPRETU2F(name) __riscv_ ## name ## _u64m1_f64m1
+#  define TYPEINTERPRETF2U __riscv_vreinterpret_v_f64m1_u64m1
+#  define TYPEINTERPRETU2F __riscv_vreinterpret_v_u64m1_f64m1
 #  define TYPEMEM(name) __riscv_ ## name ## e64_v_f64m1
 #endif
 
@@ -72,8 +72,6 @@
 #define SIMD_VSTRIDE_OKA(x) ((x) == 2) 
 #define SIMD_STRIDE_OKPAIR SIMD_STRIDE_OK
 
-#define ZERO DS(0.0, 0.0f)
-
 #include <riscv_vector.h>
 
 typedef DS(vfloat64m1_t, vfloat32m1_t) V;
@@ -90,16 +88,16 @@ typedef DS(vuint64m1_t, vuint32m1_t) Vuint;
 static inline V VDUPL(const V x)
 {
 	Vuint partr = VPARTSPLIT; // (all 1, 0, all 1, 0, ...)
-	V xl = TYPEINTERPRETU2F(vreinterpret_v)(TYPEUINT(vand_vv)(TYPEINTERPRETF2U(vreinterpret_v)(x), partr, 2*VL)); // set odd elements to 0
-	return VADD(TYPE(vfslide1up_vf)(xl, ZERO, 2*VL), xl);
+	Vuint xl = TYPEUINT(vand_vv)(TYPEINTERPRETF2U(x), partr, 2*VL); // set odd elements to 0
+	return TYPEINTERPRETU2F(TYPEUINT(vor_vv)(TYPEUINT(vslide1up_vx)(xl, 0, 2*VL), xl, 2*VL));
 }
 
 static inline V VDUPH(const V x)
 {
 	Vuint partr = VPARTSPLIT; // (all 1, 0, all 1, 0, ...)
 	Vuint parti = TYPEUINT(vnot_v)(partr, 2*VL); // (0, all 1, 0, all 1, ...)
-	V xh = TYPEINTERPRETU2F(vreinterpret_v)(TYPEUINT(vand_vv)(TYPEINTERPRETF2U(vreinterpret_v)(x), parti, 2*VL)); // set even elements to 0
-	return VADD(TYPE(vfslide1down_vf)(xh, ZERO, 2*VL), xh);
+	Vuint xh = TYPEUINT(vand_vv)(TYPEINTERPRETF2U(x), parti, 2*VL); // set even elements to 0
+	return TYPEINTERPRETU2F(TYPEUINT(vor_vv)(TYPEUINT(vslide1down_vx)(xh, 0, 2*VL), xh, 2*VL));
 }
 
 #define DVK(var, val) V var = TYPE(vfmv_v_f)(val, 2*VL)
@@ -107,28 +105,28 @@ static inline V VDUPH(const V x)
 static inline V FLIP_RI(const V x)
 {
 	Vuint partr = VPARTSPLIT; // (all 1, 0, all 1, 0, ...)
-	V xl = TYPEINTERPRETU2F(vreinterpret_v)(TYPEUINT(vand_vv)(TYPEINTERPRETF2U(vreinterpret_v)(x), partr, 2*VL)); // set odd elements to 0
+	Vuint xl = TYPEUINT(vand_vv)(TYPEINTERPRETF2U(x), partr, 2*VL); // set odd elements to 0
 	Vuint parti = TYPEUINT(vnot_v)(partr, 2*VL); // (0, all 1, 0, all 1, ...)
-	V xh = TYPEINTERPRETU2F(vreinterpret_v)(TYPEUINT(vand_vv)(TYPEINTERPRETF2U(vreinterpret_v)(x), parti, 2*VL)); // set even elements to 0
-	return VADD(TYPE(vfslide1down_vf)(xh, ZERO, 2*VL), TYPE(vfslide1up_vf)(xl, ZERO, 2*VL));
+	Vuint xh = TYPEUINT(vand_vv)(TYPEINTERPRETF2U(x), parti, 2*VL); // set even elements to 0
+	return TYPEINTERPRETU2F(TYPEUINT(vor_vv)(TYPEUINT(vslide1down_vx)(xh, 0, 2*VL), TYPEUINT(vslide1up_vx)(xl, 0, 2*VL), 2*VL));
 }
 
 static inline V VCONJ(const V x)
 {
 	Vuint partr = VPARTSPLIT; // (all 1, 0, all 1, 0, ...)
-	V xl = TYPEINTERPRETU2F(vreinterpret_v)(TYPEUINT(vand_vv)(TYPEINTERPRETF2U(vreinterpret_v)(x), partr, 2*VL)); // set odd elements to 0
+	Vuint xl = TYPEUINT(vand_vv)(TYPEINTERPRETF2U(x), partr, 2*VL); // set odd elements to 0
 	Vuint parti = TYPEUINT(vnot_v)(partr, 2*VL); // (0, all 1, 0, all 1, ...)
-	V xh = TYPEINTERPRETU2F(vreinterpret_v)(TYPEUINT(vand_vv)(TYPEINTERPRETF2U(vreinterpret_v)(x), parti, 2*VL)); // set even elements to 0
-	return VADD(xl, VNEG(xh));
+	Vuint xh = TYPEUINT(vand_vv)(TYPEINTERPRETF2U(VNEG(x)), parti, 2*VL); // set even elements to 0
+	return TYPEINTERPRETU2F(TYPEUINT(vor_vv)(xl, xh, 2*VL));
 }
 
 static inline V VBYI(V x)
 {
 	Vuint partr = VPARTSPLIT; // (all 1, 0, all 1, 0, ...)
-	V xl = TYPEINTERPRETU2F(vreinterpret_v)(TYPEUINT(vand_vv)(TYPEINTERPRETF2U(vreinterpret_v)(x), partr, 2*VL)); // set odd elements to 0
+	Vuint xl = TYPEUINT(vand_vv)(TYPEINTERPRETF2U(x), partr, 2*VL); // set odd elements to 0
 	Vuint parti = TYPEUINT(vnot_v)(partr, 2*VL); // (0, all 1, 0, all 1, ...)
-	V xh = TYPEINTERPRETU2F(vreinterpret_v)(TYPEUINT(vand_vv)(TYPEINTERPRETF2U(vreinterpret_v)(VNEG(x)), parti, 2*VL)); // set elements to negative, then set even elements to 0
-	return VADD(TYPE(vfslide1down_vf)(xh, ZERO, 2*VL), TYPE(vfslide1up_vf)(xl, ZERO, 2*VL));
+	Vuint xh = TYPEUINT(vand_vv)(TYPEINTERPRETF2U(VNEG(x)), parti, 2*VL); // set elements to negative, then set even elements to 0
+	return TYPEINTERPRETU2F(TYPEUINT(vor_vv)(TYPEUINT(vslide1down_vx)(xh, 0, 2*VL), TYPEUINT(vslide1up_vx)(xl, 0, 2*VL), 2*VL));
 }
 
 #define LDK(x) x
@@ -208,9 +206,9 @@ static inline V LD(const R *x, INT ivs, const R *aligned_like)
 	Vuint idx4 = TYPEUINT(vsub_vx)(idx3, 1, 2*VL); // (all 1, 0, all 1, 0, ...)
 	Vuint idx5 = TYPEUINT(vnot_v)(idx4, 2*VL); // (0, all 1, 0, all 1, ...)
 
-	V xl2 = TYPEINTERPRETU2F(vreinterpret_v)(TYPEUINT(vand_vv)(TYPEINTERPRETF2U(vreinterpret_v)(xl1), idx4, 2*VL)); // set odd elements to 0
-	V xh2 = TYPEINTERPRETU2F(vreinterpret_v)(TYPEUINT(vand_vv)(TYPEINTERPRETF2U(vreinterpret_v)(xh1), idx5, 2*VL)); // set even elements to 0
-	return VADD(xl2, xh2);
+	Vuint xl2 = TYPEUINT(vand_vv)(TYPEINTERPRETF2U(xl1), idx4, 2*VL); // set odd elements to 0
+	Vuint xh2 = TYPEUINT(vand_vv)(TYPEINTERPRETF2U(xh1), idx5, 2*VL); // set even elements to 0
+	return TYPEINTERPRETU2F(TYPEUINT(vor_vv)(xl2, xh2, 2*VL));
 }
 
 static inline void ST(R *x, V v, INT ovs, const R *aligned_like)
